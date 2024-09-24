@@ -3,7 +3,7 @@ import {queueTick, blockTick} from './lib/ticker';
 import * as tap_auth from './lib/tap_auth';
 import * as stable_storage from './lib/db';
 import {IDL, query, update, init, postUpgrade} from 'azle';
-import {PRIVILEGE_AUTH_INSCRIPTION, TOKEN_AUTH_INSCRIPTION} from "config";
+import {PRIVILEGE_AUTH_INSCRIPTION, TOKEN_AUTH_INSCRIPTION} from "./config";
 
 import {
     GetUtxosResult,
