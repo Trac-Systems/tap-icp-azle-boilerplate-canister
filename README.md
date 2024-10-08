@@ -72,12 +72,12 @@ cd tap-icp-boilerplate
 
 ```bash
 # copy and rename the config-dist.ts file
-cp config-dist.ts config.ts
+cp src/config-dist.ts src/config.ts
 ```
 
 ```bash
 # adjust the config file to your needs (totally fine to start with default setup)
-vi config.ts
+vi src/config.ts
 ```
 
 ```bash
