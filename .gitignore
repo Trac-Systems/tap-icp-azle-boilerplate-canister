@@ -2,6 +2,7 @@
 .dfx
 dfx_generated
 node_modules
+src/config.ts
 
 # Bitcoin
 .bitcoin/*
