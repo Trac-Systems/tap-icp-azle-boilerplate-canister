@@ -2,6 +2,9 @@ import {id, call, IDL, Principal} from "azle";
 import {HttpRequestArgs, HttpResponse} from 'azle/canisters/management';
 import {API_HOST, MINT_TICK} from "../config";
 
+// compat reasons, not required for this canister
+export const PRIVILEGE_AUTH_INSCRIPTION = '';
+
 export function apiErrorMsg(object)
 {
     return typeof object !== 'undefined' && typeof object.err !== 'undefined' ? object.err : 'No data';

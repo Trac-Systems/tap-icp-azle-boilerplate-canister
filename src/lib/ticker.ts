@@ -1,12 +1,166 @@
 import {setTimer} from "azle";
 import * as bitcoin_api from "./bitcoin_api";
+import * as eth_api from "./eth_api";
 import * as stable_storage from "./db";
 import * as tap_api from "./tap_api";
 import * as incoming from "./incoming";
 import * as queue from "./queue";
-import {START_BLOCK} from "../config";
+import * as config from '../config';
+import {START_BLOCK, START_ETH_BLOCK} from "../config";
 
 let queue_tick_cnt = 0;
+
+/**
+ * Main block related execution method for this tap-protocol liquidity-pool canister.
+ *
+ * export function blockTick() is supposed to loop over new bitcoin blocks with the help of the tap reader (indexed tap data).
+ * It detects incoming assets as well as incoming requests (liquidity add/extract, buy, sell).
+ *
+ * Based on the requests, export function block_tick()() either controls the issuance of signed asset distribution for tap protocol assets
+ * and / or sends bitcoin.
+ *
+ * export function blockTick() tries to be as resilient against errors (especially http outcall errors) as possible. Means, that it will
+ * retry to index a block if it fails for reasons not under control of the canister. This also means that all stable
+ * mem writes must only happen if no error is to be expected (with a few exceptions like registering new token metadata).
+ */
+export function bitcoinBlockTick()
+{
+    let delay = bitcoin_api.key_id === 'key_1' ? 60n : 1n;
+
+    // process the current ticker loop
+    setTimer(delay, async () => {
+
+        try
+        {
+            // we cannot initialize cached addresses and pubkeys in init() and update(),
+            // so we keep it here for the time being.
+            if(bitcoin_api.CANISTER_BITCOIN_ADDRESS === '')
+            {
+                await bitcoin_api.getCanisterAddress();
+            }
+
+            if(bitcoin_api.CANISTER_BITCOIN_PUBKEY === '')
+            {
+                await bitcoin_api.getCanisterPubkey();
+            }
+
+            if(bitcoin_api.CANISTER_BITCOIN_PUBKEY !== '' && eth_api.CANISTER_ETHEREUM_ADDRESS === '')
+            {
+                await eth_api.icpPubToAddress(bitcoin_api.CANISTER_BITCOIN_PUBKEY);
+            }
+
+            if(false === stable_storage.dbContainsKey('currentBlock'))
+            {
+                stable_storage.dbPut('currentBlock', START_BLOCK);
+            }
+
+            const current_block = stable_storage.dbGet('currentBlock');
+
+            // keeping a re-org safe distance of 3 blocks
+            const updated_block = await tap_api.updatedBlock() - config.BITCOIN_FINALITY_DISTANCE;
+
+            if(typeof updated_block.err !== 'undefined' || current_block === null)
+            {
+                throw new Error(tap_api.apiErrorMsg(updated_block));
+            }
+
+            const block_diff = updated_block - current_block;
+
+            // in case we need to catch up, we go faster
+            if(block_diff >= 2)
+            {
+                delay = 1n;
+            }
+            else
+            {
+                delay = bitcoin_api.key_id === 'key_1' ? 60n : 1n;
+            }
+
+            stable_storage.dbPut('block_diff', 'current ' + current_block + ' updated: ' + updated_block + ' diff: ' + block_diff);
+
+            // index each new block since the recent updated one
+            // the block loop handles incoming liquidity, liquidity extraction as well as buying and selling.
+            for(let i = 0; i < block_diff; i++)
+            {
+                const block = (updated_block - block_diff) + i + 1;
+
+                console.log('TRYING NEXT BLOCK', block);
+
+                // retrieve unprocessed tap token requests for this canister's btc address
+                await incoming.processMintMessage(block)
+
+                stable_storage.dbPut('currentBlock', block);
+            }
+        }
+        catch(e)
+        {
+            // retry on next tick
+            console.log(e);
+            stable_storage.dbPut('debug', e.toString());
+        }
+
+        bitcoinBlockTick();
+    });
+}
+
+/**
+ * Separate ticker to await ethereum related incoming tap transactions.
+ * If you don't need this, just remove the initial calls in index.ts.
+ */
+export function ethereumBlockTick()
+{
+    let delay = bitcoin_api.key_id === 'key_1' ? 60n : 1n;
+
+    setTimer(delay, async () => {
+
+        try
+        {
+            if(false === stable_storage.dbContainsKey('currentEthBlock'))
+            {
+                stable_storage.dbPut('currentEthBlock', START_ETH_BLOCK);
+            }
+
+            const current_eth_block = await eth_api.getEthereumBlockNumber();
+            stable_storage.dbPut('currentEthBlock', current_eth_block);
+
+            const current_btc_block = stable_storage.dbGet('currentBlock');
+
+            if(false === stable_storage.dbContainsKey('ethLastBitcoinBlock'))
+            {
+                stable_storage.dbPut('ethLastBitcoinBlock', current_btc_block);
+            }
+
+            const last_btc_block = stable_storage.dbGet('ethLastBitcoinBlock');
+            const diff = current_btc_block - last_btc_block;
+
+            if(diff >= 2)
+            {
+                delay = 1n;
+            }
+            else
+            {
+                delay = bitcoin_api.key_id === 'key_1' ? 60n : 1n;
+            }
+
+            for(let i = 0; i < diff; i++)
+            {
+                // here you may call a function in incoming.ts that deals with ethereum related incoming inscriptions.
+                // you could for example use an ethereum txhash with your mint/transfer inscription's dta field to check
+                // the validity of an ethereum transaction before processing.
+            }
+
+            stable_storage.dbPut('ethLastBitcoinBlock', current_btc_block);
+        }
+        catch(e)
+        {
+            // retry on next tick
+            console.log(e);
+            stable_storage.dbPut('eth_debug', e.toString());
+        }
+
+        ethereumBlockTick();
+    });
+}
 
 /**
  * The queueTick() function processes logs that are being created with functions and their messages in lib/incoming.ts
@@ -81,82 +235,7 @@ export function queueTick()
                         continue;
                     }
 
-                    if (!stable_storage.dbContainsKey('curr_utxos'))
-                    {
-                        stable_storage.dbPut('curr_utxos', []);
-                    }
-
-                    if (!stable_storage.dbContainsKey('curr_utxos_value'))
-                    {
-                        stable_storage.dbPut('curr_utxos_value', 0);
-                    }
-
-                    let curr_utxos = stable_storage.dbGet('curr_utxos');
-
-                    if(await queue.isLogEntryTransactable(log_entry))
-                    {
-                        let curr_utxos_value = stable_storage.dbGet('curr_utxos_value');
-
-                        console.log('CURR UTXOS VALUE', curr_utxos_value);
-
-                        // should the current ordered utxo values not make up for the costs, we gonna try to find more from the actual canister and update those.
-                        if(curr_utxos_value < Number(log_entry.sats) + Number(log_entry.fee))
-                        {
-                            const the_utxos = await bitcoin_api.getUtxos(bitcoin_api.CANISTER_BITCOIN_ADDRESS);
-
-                            if(the_utxos.utxos.length === 0)
-                            {
-                                throw new Error('No UTXOs found.');
-                            }
-
-                            for(let j = 0; j < the_utxos.utxos.length; j++)
-                            {
-                                const tx = Buffer.from(the_utxos.utxos[j].outpoint.txid).toString('hex');
-                                const vo = the_utxos.utxos[j].outpoint.vout;
-                                const val = the_utxos.utxos[j].value;
-
-                                if (false === stable_storage.dbContainsKey('curr_utxos_index_'+tx+':'+vo))
-                                {
-                                    await bitcoin_api.storeUtxo({ tx, vo , val });
-                                }
-                            }
-
-                            curr_utxos = stable_storage.dbGet('curr_utxos');
-                            curr_utxos_value = stable_storage.dbGet('curr_utxos_value');
-
-                            if(curr_utxos_value < Number(log_entry.sats) + Number(log_entry.fee))
-                            {
-                                throw new Error('Could not find enough utxos. Need more.');
-                            }
-                        }
-
-                        // pre-emptively simulating spent utxos. the exact same will be selected in the processor below.
-                        const predicted_utxos_transaction = bitcoin_api.buildTransactionWithFee(
-                            curr_utxos,
-                            bitcoin_api.CANISTER_BITCOIN_ADDRESS,
-                            log_entry.addr,
-                            BigInt(log_entry.sats),
-                            BigInt(log_entry.fee)
-                        );
-
-                        const inputs = predicted_utxos_transaction.txInputs;
-
-                        if(inputs.length > 10)
-                        {
-                            throw new Error('Too many inputs. Need more higher value utxos.');
-                        }
-
-                        // clean pre-emptively spent utxo from the curr_utxos set
-                        for(let j = 0; j < inputs.length; j++)
-                        {
-                            console.log('DELETING UTXO', inputs[j].hash.toString('hex'), inputs[j].index);
-                            await bitcoin_api.deleteUtxo(inputs[j].hash.toString('hex'), inputs[j].index);
-                        }
-                    }
-
-                    // since we removed the pre-emptively spent utxos, we can now afford parallel processor calls to work on the current log entry.
-                    // note the missing "await", will be fulfilled further below.
-                    queueable = queue.process(log_entry, 'log_'+i, curr_utxos);
+                    queueable = queue.process(log_entry, 'log_'+i);
 
                     if(queueable !== null)
                     {
@@ -230,97 +309,5 @@ export function queueTick()
         }
 
         queueTick();
-    });
-}
-
-/**
- * Main block related execution method for this tap-protocol liquidity-pool canister.
- *
- * export function blockTick() is supposed to loop over new bitcoin blocks with the help of the tap reader (indexed tap data).
- * It detects incoming assets as well as incoming requests (liquidity add/extract, buy, sell).
- *
- * Based on the requests, export function block_tick()() either controls the issuance of signed asset distribution for tap protocol assets
- * and / or sends bitcoin.
- *
- * export function blockTick() tries to be as resilient against errors (especially http outcall errors) as possible. Means, that it will
- * retry to index a block if it fails for reasons not under control of the canister. This also means that all stable
- * mem writes must only happen if no error is to be expected (with a few exceptions like registering new token metadata).
- */
-export function blockTick()
-{
-    let delay = bitcoin_api.key_id === 'key_1' ? 60n : 1n;
-
-    // process the current ticker loop
-    setTimer(delay, async () => {
-
-        //stable_storage.dbPut('debug', '');
-
-        try
-        {
-            // we cannot initialize cached addresses and pubkeys in init() and update(),
-            // so we keep it here for the time being.
-            if(bitcoin_api.CANISTER_BITCOIN_ADDRESS === '')
-            {
-                await bitcoin_api.getCanisterAddress();
-            }
-
-            if(bitcoin_api.CANISTER_BITCOIN_PUBKEY === '')
-            {
-                await bitcoin_api.getCanisterPubkey();
-            }
-
-            if(false === stable_storage.dbContainsKey('currentBlock'))
-            {
-                stable_storage.dbPut('currentBlock', START_BLOCK);
-            }
-
-            const current_block = stable_storage.dbGet('currentBlock');
-
-            // keeping a re-org safe distance of 3 blocks
-            const updated_block = await tap_api.updatedBlock() // TODO: enable block distance - 3;
-
-            if(typeof updated_block.err !== 'undefined' || current_block === null)
-            {
-                throw new Error(tap_api.apiErrorMsg(updated_block));
-            }
-
-            const block_diff = updated_block - current_block;
-
-            // in case we need to catch up, we go faster
-            if(block_diff >= 2)
-            {
-                delay = 1n;
-            }
-            else
-            {
-                delay = 10n;
-            }
-
-            console.log('CURRENT BLOCK', current_block, 'UPDATED BLOCK', updated_block);
-
-            stable_storage.dbPut('block_diff', 'current ' + current_block + ' updated: ' + updated_block + ' diff: ' + block_diff);
-
-            // index each new block since the recent updated one
-            // the block loop handles incoming liquidity, liquidity extraction as well as buying and selling.
-            for(let i = 0; i < block_diff; i++)
-            {
-                const block = (updated_block - block_diff) + i + 1;
-
-                console.log('TRYING NEXT BLOCK', block);
-
-                // retrieve unprocessed tap token requests for this canister's btc address
-                await incoming.processMintMessage(block);
-
-                stable_storage.dbPut('currentBlock', block);
-            }
-        }
-        catch(e)
-        {
-            // retry on next tick
-            console.log(e);
-            stable_storage.dbPut('debug', e.toString());
-        }
-
-        blockTick();
     });
 }

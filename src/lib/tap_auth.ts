@@ -2,7 +2,51 @@ import {sha256} from "js-sha256";
 import * as eth_util from "ethereumjs-util";
 import * as secp from "@noble/secp256k1";
 import * as bitcoin_api from "./bitcoin_api";
-import {TOKEN_AUTH_INSCRIPTION, PRIVILEGE_AUTH_INSCRIPTION} from "../config";
+import {TOKEN_AUTH_INSCRIPTION, ETH_CHAIN_ID, PRIVILEGE_AUTH_INSCRIPTION} from "../config";
+import {Address, encodeAbiParameters, encodePacked, keccak256} from "viem";
+import { Address,
+    keccak256,
+    toBytes,
+    isAddressEqual,
+    recoverAddress,
+    serializeSignature,
+    toHex
+} from 'viem'
+import {CANISTER_ETHEREUM_ADDRESS} from "./eth_api";
+
+export async function signCreateVoucher(item)
+{
+    const hash = keccak256(
+        encodePacked(
+            ['bytes'],
+            [encodeAbiParameters([
+                { name: 'account', type: 'address' },
+                { name: 'value', type: 'uint256' },
+                { name: 'token', type: 'string' },
+                { name: 'decimals', type: 'uint8' },
+                { name: 'nonce', type: 'uint256' },
+                { name: 'chain_id', type: 'uint256' }
+            ], [item.ethAddress as Address, item.amt, item.tick, item.dec, item.nonce, ETH_CHAIN_ID])]
+        )
+    )
+
+    const partialSignature = await bitcoin_api.signHashWithECDSARaw(toBytes(hash));
+    if (partialSignature.length != 64) throw new Error('invalid signature')
+    const r = toHex(partialSignature.slice(0, 32))
+    const s = toHex(partialSignature.slice(32, 64))
+
+    const possibleVs = [27n, 28n, 29n, 30n];
+
+    for (const v of possibleVs) {
+        const signature = serializeSignature({ r, s, v })
+        const recovered = await recoverAddress({ hash, signature })
+        if (isAddressEqual(recovered, CANISTER_ETHEREUM_ADDRESS as Address)) {
+            return serializeSignature({ r, s, v }).toString();
+        }
+    }
+
+    throw Error('Self sign for voucher failed. This may never happen and indicates a bug within the canister.');
+}
 
 export async function tap(txid, vout, value)
 {
@@ -21,6 +65,18 @@ export async function tap(txid, vout, value)
         2_000n
         : // Choose the 50th percentile for sending fees.
         bitcoin_api.key_id === 'test_key_1' ? feePercentiles[50] : feePercentiles[75];
+
+    console.log(pubkey,
+        address,
+        utxos,
+        address,
+        1000n,
+        feePerByte,
+        {
+            txid : txid.trim(),
+            vout,
+            value
+        });
 
     const transaction = await bitcoin_api.buildTransaction(
         pubkey,

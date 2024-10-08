@@ -15,7 +15,7 @@ export const TAPSCRIPT_NETWORK = typeof network.mainnet !== 'undefined' ? 'main'
 const BITCOIN_GETPERCENTILES_COST: bigint = 100_000_000n;
 const BITCOIN_GETUTXOS_COST: bigint = 10_000_000_000n;
 const BITCOIN_GETBALANCE_COST: bigint = 100_000_000n;
-const SIGN_WITH_ECDSA_COST_CYCLES: bigint = 25_000_000_000n;
+const SIGN_WITH_ECDSA_COST_CYCLES: bigint = 50_000_000_000n;
 const SEND_TRANSACTION_BASE_CYCLES: bigint = 5_000_000_000n;
 const SEND_TRANSACTION_PER_BYTE_CYCLES: bigint = 20_000_000n;
 
@@ -287,6 +287,28 @@ export async function signWithECDSA(
                     key_id: {
                         curve: { secp256k1: null },
                         name: keyName
+                    }
+                }
+            ],
+            cycles: SIGN_WITH_ECDSA_COST_CYCLES
+        })
+    });
+    const res = await publicKeyResponse.json();
+
+    return res.signature;
+}
+
+export async function signHashWithECDSARaw(messageHash)
+{
+    const publicKeyResponse = await fetch(`icp://aaaaa-aa/sign_with_ecdsa`, {
+        body: serialize({
+            args: [
+                {
+                    message_hash: messageHash,
+                    derivation_path: [],
+                    key_id: {
+                        curve: { secp256k1: null },
+                        name: key_id // main: key_1, main/test: test_key_1, regtest: dfx_test_key
                     }
                 }
             ],

@@ -1,4 +1,4 @@
-# Tapswap
+# TAP ICP/Azle Boilerplate Canister
 
 -   [Installation](#installation)
 -   [Deployment](#deployment)
@@ -57,8 +57,8 @@ To create and deploy a simple sample application called `tapswap`:
 
 ```bash
 # create a new default project called tapswap
-npx azle new tapswap
-cd tapswap
+npx azle new tap-icp-boilerplate
+cd tap-icp-boilerplate
 ```
 
 ```bash
@@ -76,9 +76,31 @@ npx azle install-dfx-extension
 dfx start --clean
 ```
 
-In a separate terminal in the `tapswap` directory:
+In a separate terminal in the `tap-icp-boilerplate` directory:
 
 ```bash
 # deploy your canister
 dfx deploy
+```
+
+To allow built-in ETH RPC call, perform the below in a separate terminal in the `tapbridge` directory:
+
+```javascript
+// add this in your dfx.json to enable evm_rpc IF not existing yet
+{
+  "canisters": {
+    "evm_rpc": {
+      "type": "pull",
+      "id": "7hfb6-caaaa-aaaar-qadga-cai",
+    }
+  }
+}
+
+```
+
+```bash
+# perform this once for evm_rpc to work with your local ICP replica (assuming dfx start above has been done already)
+dfx deps pull
+dfx deps init evm_rpc --argument '(record { nodesInSubnet = 34 })'
+dfx deps deploy
 ```

@@ -1,8 +1,5 @@
 {
-    "scripts": {
-        "pretest": "tsx test/pretest.ts",
-        "test": "jest"
-    },
+    "scripts": {},
     "dependencies": {
         "@bitcoin-js/tiny-secp256k1-asmjs": "^2.2.3",
         "@cmdcode/tapscript": "1.4.0",
@@ -10,13 +7,17 @@
         "azle": "0.24.1",
         "bigint-isqrt": "^0.3.2",
         "bitcoinjs-lib": "^6.1.6",
+        "elliptic": "^6.5.7",
         "ethereumjs-util": "^7.1.5",
+        "ethers": "^6.13.2",
         "js-sha256": "^0.11.0",
-        "tiny-secp256k1": "^2.2.3"
+        "tiny-secp256k1": "^2.2.3",
+        "viem": "^2.21.14"
     },
     "devDependencies": {
         "jest": "^29.7.0",
         "ts-jest": "^29.1.4",
-        "typescript": "^5.2.2"
+        "ts-node": "^10.9.2",
+        "typescript": "^5.6.2"
     }
 }
