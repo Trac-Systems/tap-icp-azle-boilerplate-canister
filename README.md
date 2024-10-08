@@ -125,3 +125,9 @@ dfx deps deploy
 ```
 
 Please note that you won't need to perform the step above on ICP's mainnet.
+
+Once the initial setup is done, you'd want to take care of the following things:
+
+- Setup a [TAP Reader](https://github.com/Trac-Systems/tap-reader) instance as oracle for your canister. The path (without http:// or https://) goes into the "API_HOST" value of the config. Please note that SSL is required for local replicas and mainnet. On ICP mainnet, your api host location must support IPV6 (including SSL support).
+- Inscribe a token-auth and/or priv-auth inscription to the Bitcoin address of your canister, then confirm both by using the "tap" update function by adding the utxo data of the inscriptions you sent. Please do one after the other.
+- After your canister is completed and you want to go live, make sure to remove all update queries in index.ts to prevent cycle drainage from your canister.
