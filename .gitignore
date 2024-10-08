@@ -3,6 +3,7 @@
 dfx_generated
 node_modules
 src/config.ts
+.idea
 
 # Bitcoin
 .bitcoin/*
