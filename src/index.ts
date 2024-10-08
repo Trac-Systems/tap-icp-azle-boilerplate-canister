@@ -104,15 +104,6 @@ export default class{
         return JSON.stringify(out);
     }
 
-    @query([IDL.Text], IDL.Nat)
-    getTokenBalance(ticker)
-    {
-        if(stable_storage.dbContainsKey('tb_'+JSON.stringify(ticker))) {
-            return stable_storage.dbGet('tb_'+JSON.stringify(ticker));
-        }
-        return 0n;
-    }
-
     @query([IDL.Nat32], IDL.Text)
     getLog(i)
     {
