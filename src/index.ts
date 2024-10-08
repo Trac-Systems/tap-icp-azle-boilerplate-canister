@@ -249,6 +249,12 @@ export default class{
         return await tap_auth.signCreateTokenAuthority();
     }
 
+    @update([], IDL.Text)
+    async signCreatePrivilegeAuthority()
+    {
+        return await tap_auth.signCreatePrivilegeAuthority();
+    }
+
     @update([], IDL.Vec(MillisatoshiPerByte))
     async getCurrentFeePercentiles()
     {

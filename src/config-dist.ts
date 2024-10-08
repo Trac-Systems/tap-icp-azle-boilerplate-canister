@@ -1,7 +1,3 @@
-/**
- * The config file should ideally be populated with an env file or similar upon building.
- */
-
 // The btc network to operate on. Options: mainnet, testnet, regtest
 export const network = { regtest : null };
 
