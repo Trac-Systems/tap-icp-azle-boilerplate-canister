@@ -10,7 +10,10 @@ export const network = { regtest : null };
 export const API_HOST = '';
 
 // the mint tick can be any tap token mint as of this canister, but it should be a ticker that practically can never mint out.
-export const MINT_TICK = 'tapbridge-v1';
+// mints can be used as a cheap alternative to transfers to send commands to the canister from within bitcoin (through the dta field).
+// it is recommended to deploy a ticker specifically for canister communication that uses a low mint limit and extremel high supply.
+// max allowed supply within the tap protocol is 18446744073709551615.
+export const MINT_TICK = 'sometokenticker'
 
 // the BTC block to start from listening to events in incoming.ts
 export const START_BLOCK = 0;
